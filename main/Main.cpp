@@ -1,9 +1,13 @@
 #include <BLEManager.hpp>
 #include <esp_log.h>
 #include <nvs_flash.h>
+#include <driver/gpio.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <soc/gpio_num.h>
+
+gpio_num_t LED_GPIO_NUM {GPIO_NUM_35};
 
 struct Function
 {
@@ -33,6 +37,10 @@ void onFunctionToggled(const uint8_t* incoming_data, const int len)
     }
     auto f = reinterpret_cast<const Function&>(*incoming_data);
     ESP_LOGI("MAIN", "Function '%c%d' toggled to %d", f.function, f.id, f.state);
+    if (f.id == 0)
+    {
+        gpio_set_level(LED_GPIO_NUM, f.state);
+    }
 }
 
 void onTrigger(const uint8_t* incoming_data, const int len)
@@ -88,6 +96,15 @@ std::function<void(uint8_t*, int)> onDataCallback = [](const uint8_t* incomingDa
 
 extern "C" void app_main(void)
 {
+    gpio_config_t io_conf = {};
+    io_conf.pin_bit_mask = (1ULL << LED_GPIO_NUM); // Select GPIO 36
+    io_conf.mode = GPIO_MODE_OUTPUT; // Set as output mode
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    io_conf.intr_type = GPIO_INTR_DISABLE; // Disable interrupts
+    gpio_config(&io_conf); // Configure GPIO
+    gpio_set_level(LED_GPIO_NUM, 0); // Set GPIO36 low
+
     const auto TAG = "BLE_TEST";
     ESP_LOGI(TAG, "Initializing BLE test app");
 
