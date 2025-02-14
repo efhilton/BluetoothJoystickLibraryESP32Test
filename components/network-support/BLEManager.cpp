@@ -12,6 +12,7 @@
 #include <array>
 #include <cstring>
 #include <esp_mac.h>
+#include <functional>
 
 #define DEVICE_NAME "Heltec V3 Tester"
 
@@ -26,15 +27,11 @@ static constexpr std::array<uint8_t, 16> gatt_svr_chr_uuid_bytes{
     0x90, 0x78, 0x56, 0x34, 0x12, 0xef, 0xcd, 0xab
 };
 
+static uint8_t ownAddressType;
 
-static uint8_t safeEvacCharacteristicValue[20];
-
-namespace SafeEvac
+namespace efhilton
 {
-    static constexpr char TAG[] = "BLEManager";
-    static uint8_t ownAddressType;
-
-    static int onGapEvent(ble_gap_event* event, void* arg)
+    int BLEManager::onGapEvent(ble_gap_event* event, void* arg)
     {
         switch (event->type)
         {
@@ -72,12 +69,20 @@ namespace SafeEvac
             return 0;
 
         case BLE_GAP_EVENT_MTU:
-            ESP_LOGI(TAG, "mtu update event; conn_handle=%d cid=%d mtu=%d\n",
+            ESP_LOGI(TAG, "mtu update event; conn_handle=%d cid=%d mtu=%d",
                      event->mtu.conn_handle,
                      event->mtu.channel_id,
                      event->mtu.value);
             return 0;
-
+        case BLE_GAP_EVENT_CONN_UPDATE_REQ:
+            ESP_LOGI(TAG, "connection update request");
+            break;
+        case BLE_GAP_EVENT_LINK_ESTAB:
+            ESP_LOGI(TAG, "Event Link Established");
+            break;
+        case BLE_GAP_EVENT_DATA_LEN_CHG:
+            ESP_LOGI(TAG, "Event Data Length Change");
+            break;
         default:
             ESP_LOGI(TAG, "Default case: I don't know what to do here! (%d)", event->type);
             return 1;
@@ -85,7 +90,7 @@ namespace SafeEvac
         return 0;
     }
 
-    static void bleAdvertise()
+    void BLEManager::bleAdvertise()
     {
         ble_gap_adv_params adv_params{};
         ble_hs_adv_fields fields{};
@@ -108,7 +113,7 @@ namespace SafeEvac
         rc = ble_gap_adv_set_fields(&fields);
         if (rc != 0)
         {
-            ESP_LOGE(TAG, "error setting advertisement data; rc=%d\n", rc);
+            ESP_LOGE(TAG, "error setting advertisement data; rc=%d", rc);
             return;
         }
 
@@ -118,12 +123,12 @@ namespace SafeEvac
         rc = ble_gap_adv_start(ownAddressType, nullptr, BLE_HS_FOREVER, &adv_params, onGapEvent, nullptr);
         if (rc != 0)
         {
-            ESP_LOGE(TAG, "error enabling advertisement; rc=%d\n", rc);
+            ESP_LOGE(TAG, "error enabling advertisement; rc=%d", rc);
             return;
         }
     }
 
-    void hostTask(void* arg)
+    void BLEManager::hostTask(void* arg)
     {
         ESP_LOGI(TAG, "BLE Host Task Started");
 
@@ -132,12 +137,12 @@ namespace SafeEvac
         nimble_port_freertos_deinit();
     }
 
-    void onReset(int reason)
+    void BLEManager::onReset(int reason)
     {
         ESP_LOGI(TAG, "Resetting BLE State. Reason: %d", reason);
     }
 
-    std::string bleUuid128ToGuid(const std::array<uint8_t, 16>& uuid)
+    std::string BLEManager::bleUuid128ToGuid(const std::array<uint8_t, 16>& uuid)
     {
         std::ostringstream ss;
         ss << std::hex << std::setfill('0');
@@ -179,10 +184,10 @@ namespace SafeEvac
         return ss.str();
     }
 
-    static std::array<uint8_t, 16> reverseUuid(const std::array<uint8_t, 16>& uuid)
+    std::array<uint8_t, 16> BLEManager::reverseUuid(const std::array<uint8_t, 16>& uuid)
     {
         auto reversedUuid = uuid;
-        std::reverse(reversedUuid.begin(), reversedUuid.end());
+        std::ranges::reverse(reversedUuid);
         return reversedUuid;
     }
 
@@ -209,7 +214,7 @@ namespace SafeEvac
         rc = ble_hs_id_infer_auto(0, &ownAddressType);
         if (rc != 0)
         {
-            ESP_LOGE(TAG, "error determining address type; rc=%d\n", rc);
+            ESP_LOGE(TAG, "error determining address type; rc=%d", rc);
             return;
         }
 
@@ -217,7 +222,7 @@ namespace SafeEvac
         bleAdvertise();
     }
 
-    void onGattsRegister(ble_gatt_register_ctxt* ctxt, void* arg)
+    void BLEManager::onGattsRegister(ble_gatt_register_ctxt* ctxt, void* arg)
     {
         char buf[BLE_UUID_STR_LEN];
 
@@ -249,8 +254,57 @@ namespace SafeEvac
         }
     }
 
+    int BLEManager::onCharacteristicAccess(uint16_t conn_handle, uint16_t attr_handle,
+                                           struct ble_gatt_access_ctxt* ctxt, void* arg)
+    {
+        static constexpr int PACKET_LENGTH{20};
+        static uint8_t incomingCmd[PACKET_LENGTH];
 
-    int gatt_svr_init()
+        if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR)
+        {
+            // Determine the length of the incoming data
+            const int len = OS_MBUF_PKTLEN(ctxt->om);
+
+            // Ensure the buffer is large enough to hold the incoming data plus a null terminator
+            if (len + 1 >= PACKET_LENGTH)
+            {
+                ESP_LOGE(BLEManager::TAG, "Incoming data too large for buffer");
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            }
+
+            // Extract the data from ctxt->om
+            const int rc = ble_hs_mbuf_to_flat(ctxt->om, incomingCmd, len, nullptr);
+            if (rc != 0)
+            {
+                ESP_LOGE(BLEManager::TAG, "Error extracting data from mbuf: %d", rc);
+            }
+            else
+            {
+                auto* bleManager = static_cast<BLEManager*>(arg);
+                if (bleManager->onData != nullptr)
+                {
+                    bleManager->onData(incomingCmd, len);
+                }
+            }
+
+            return rc;
+        }
+        if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR)
+        {
+            ESP_LOGI(TAG, "Read Characteristic Value Request");
+            return os_mbuf_append(ctxt->om, incomingCmd, sizeof(incomingCmd));
+        }
+        ESP_LOGI(TAG, "Unknown Characteristic Access Request");
+        return 0;
+    }
+
+    void BLEManager::defaultDataOutput(uint8_t* incomingData, int len)
+    {
+        const std::string incomingCmdString(reinterpret_cast<char*>(incomingData), len);
+        ESP_LOGI(BLEManager::TAG, "Received command via Characteristic, value: %s", incomingCmdString.c_str());
+    }
+
+    int BLEManager::gatt_svr_init()
     {
         ble_svc_gap_init();
         ble_svc_gatt_init();
@@ -267,81 +321,23 @@ namespace SafeEvac
         };
         memcpy(gatt_svr_chr_uuid.value, gatt_svr_chr_uuid_bytes.data(), sizeof(gatt_svr_chr_uuid.value));
 
+        ble_gatt_chr_def mainCharacteristic{};
+        mainCharacteristic.uuid = &gatt_svr_chr_uuid.u;
+        mainCharacteristic.access_cb = onCharacteristicAccess;
+        mainCharacteristic.arg = this;
+        mainCharacteristic.flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE;
         static ble_gatt_chr_def characteristics[] = {
-            {
-                .uuid = &gatt_svr_chr_uuid.u,
-                .access_cb = [](uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt* ctxt,
-                                void* arg)
-                {
-                    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR)
-                    {
-                        // Determine the length of the incoming data
-                        int len = OS_MBUF_PKTLEN(ctxt->om);
-
-                        // Ensure the buffer is large enough to hold the incoming data plus a null terminator
-                        if (len >= sizeof(safeEvacCharacteristicValue))
-                        {
-                            ESP_LOGE(SafeEvac::TAG, "Incoming data too large for buffer");
-                            return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-                        }
-
-                        // Extract the data from ctxt->om
-                        int rc = ble_hs_mbuf_to_flat(ctxt->om, safeEvacCharacteristicValue, len, nullptr);
-
-                        // Null-terminate the written value to treat it as a string
-                        safeEvacCharacteristicValue[len] = '\0';
-
-                        if (rc == 0)
-                        {
-                            ESP_LOGI(SafeEvac::TAG, "Characteristic written, value: %s", safeEvacCharacteristicValue);
-
-                            // Validate and process the command if it matches the expected format "SE#"
-                            if (len == 3 && safeEvacCharacteristicValue[0] == 'S' && safeEvacCharacteristicValue[1] ==
-                                'E' && isdigit(safeEvacCharacteristicValue[2]))
-                            {
-                                int commandValue = safeEvacCharacteristicValue[2] - '0'; // Convert char to int
-                                ESP_LOGI(SafeEvac::TAG, "Received command: SE%d", commandValue);
-                                // Process the command based on `commandValue` here
-                            }
-                            else
-                            {
-                                ESP_LOGW(SafeEvac::TAG, "Invalid command format");
-                            }
-                        }
-                        else
-                        {
-                            ESP_LOGE(SafeEvac::TAG, "Error extracting data from mbuf: %d", rc);
-                        }
-
-                        return rc;
-                    }
-                    else if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR)
-                    {
-                        ESP_LOGI(TAG, "Read Characteristic Value Request");
-                        return os_mbuf_append(ctxt->om, safeEvacCharacteristicValue,
-                                              sizeof(safeEvacCharacteristicValue));
-                    }
-                    else
-                    {
-                        ESP_LOGI(TAG, "Unknown Characteristic Access Request");
-                    }
-                    return 0;
-                },
-                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
-            },
-            {
-                0, // No more characteristics
-            }
+            mainCharacteristic,
+            {} // no more characteristics.
         };
+
+        ble_gatt_svc_def mainService{};
+        mainService.type = BLE_GATT_SVC_TYPE_PRIMARY;
+        mainService.uuid = &gatt_svr_svc_uuid.u;
+        mainService.characteristics = characteristics;
         static const ble_gatt_svc_def gatt_svr_svcs[] = {
-            {
-                .type = BLE_GATT_SVC_TYPE_PRIMARY,
-                .uuid = &gatt_svr_svc_uuid.u,
-                .characteristics = characteristics,
-            },
-            {
-                0, // No more services
-            },
+            mainService,
+            {}, // no more services.
         };
 
         int rc = ble_gatts_count_cfg(gatt_svr_svcs);
@@ -361,7 +357,6 @@ namespace SafeEvac
         return 0;
     }
 
-    static constexpr int MIN_REQUIRED_HEAP = 1024 * 10;
 
     void BLEManager::onInitialize()
     {
@@ -451,5 +446,10 @@ namespace SafeEvac
             macAddress = NetworkUtilities::macToString(mac);
         }
         return macAddress;
+    }
+
+    void BLEManager::setOnDataCallback(const DataCallback_t& callback)
+    {
+        onData = callback;
     }
 }
