@@ -31,60 +31,53 @@ static uint8_t ownAddressType;
 
 namespace efhilton
 {
+    BLEManager::DataCallback_t onData;
+    BLEManager::ConnectionStatusCallback_t onConnectionStatus;
+    uint16_t conn_handle;
+    uint16_t char_handle;
+
     int BLEManager::onGapEvent(ble_gap_event* event, void* arg)
     {
         switch (event->type)
         {
         case BLE_GAP_EVENT_CONNECT:
-            ESP_LOGI(TAG, "connection %s; status=%d ",
-                     event->connect.status == 0 ? "established" : "failed",
-                     event->connect.status);
-            if (event->connect.status != 0)
+            if (event->connect.status == 0)
             {
-                BLEManager::onSync();
+                conn_handle = event->connect.conn_handle;
+                if (onConnectionStatus != nullptr)
+                {
+                    onConnectionStatus(true);
+                }
+            }
+            else
+            {
+                ESP_LOGE("BLEManager", "Connection failed; status=%d", event->connect.status);
             }
             return 0;
 
         case BLE_GAP_EVENT_DISCONNECT:
-            ESP_LOGI(TAG, "disconnect; reason=%d ", event->disconnect.reason);
-            BLEManager::onSync();
-            return 0;
-
-        case BLE_GAP_EVENT_CONN_UPDATE:
-            ESP_LOGI(TAG, "connection updated; status=%d ",
-                     event->conn_update.status);
+            conn_handle = 0;
+            if (onConnectionStatus != nullptr)
+            {
+                onConnectionStatus(false);
+            }
             return 0;
 
         case BLE_GAP_EVENT_ADV_COMPLETE:
-            ESP_LOGI(TAG, "advertise complete; reason=%d",
-                     event->adv_complete.reason);
-            return 0;
+            onSync();
+            break;
 
         case BLE_GAP_EVENT_SUBSCRIBE:
-            ESP_LOGI(TAG, "subscribe event; val_handle=%d conn_handle=%d reason=%d cur_notify=%d",
-                     event->subscribe.attr_handle,
-                     event->subscribe.conn_handle,
-                     event->subscribe.reason,
-                     event->subscribe.cur_notify);
-            return 0;
-
         case BLE_GAP_EVENT_MTU:
-            ESP_LOGI(TAG, "mtu update event; conn_handle=%d cid=%d mtu=%d",
-                     event->mtu.conn_handle,
-                     event->mtu.channel_id,
-                     event->mtu.value);
-            return 0;
+        case BLE_GAP_EVENT_CONN_UPDATE:
         case BLE_GAP_EVENT_CONN_UPDATE_REQ:
-            ESP_LOGI(TAG, "connection update request");
-            break;
         case BLE_GAP_EVENT_LINK_ESTAB:
-            ESP_LOGI(TAG, "Event Link Established");
-            break;
         case BLE_GAP_EVENT_DATA_LEN_CHG:
-            ESP_LOGI(TAG, "Event Data Length Change");
+        case BLE_GAP_EVENT_PHY_UPDATE_COMPLETE:
+        case BLE_GAP_EVENT_NOTIFY_TX:
             break;
         default:
-            ESP_LOGI(TAG, "Default case: I don't know what to do here! (%d)", event->type);
+            ESP_LOGI(TAG, "Unknown gap event: %d", event->type);
             return 1;
         }
         return 0;
@@ -94,23 +87,20 @@ namespace efhilton
     {
         ble_gap_adv_params adv_params{};
         ble_hs_adv_fields fields{};
-        const char* name{nullptr};
-        int rc{};
 
         memset(&fields, 0, sizeof(fields));
 
-        fields.flags = BLE_HS_ADV_F_DISC_GEN |
-            BLE_HS_ADV_F_BREDR_UNSUP;
+        fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
 
         fields.tx_pwr_lvl_is_present = 1;
         fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 
-        name = ble_svc_gap_device_name();
+        const char* name{ble_svc_gap_device_name()};
         fields.name = (uint8_t*)name;
         fields.name_len = strlen(name);
         fields.name_is_complete = 1;
 
-        rc = ble_gap_adv_set_fields(&fields);
+        int rc = ble_gap_adv_set_fields(&fields);
         if (rc != 0)
         {
             ESP_LOGE(TAG, "error setting advertisement data; rc=%d", rc);
@@ -142,61 +132,15 @@ namespace efhilton
         ESP_LOGI(TAG, "Resetting BLE State. Reason: %d", reason);
     }
 
-    std::string BLEManager::bleUuid128ToGuid(const std::array<uint8_t, 16>& uuid)
-    {
-        std::ostringstream ss;
-        ss << std::hex << std::setfill('0');
-
-        // Section 1: 8 characters
-        for (int i = 0; i < 4; ++i)
-        {
-            ss << std::setw(2) << static_cast<int>(uuid[i]);
-        }
-        ss << "-";
-
-        // Section 2: 4 characters
-        for (int i = 4; i < 6; ++i)
-        {
-            ss << std::setw(2) << static_cast<int>(uuid[i]);
-        }
-        ss << "-";
-
-        // Section 3: 4 characters
-        for (int i = 6; i < 8; ++i)
-        {
-            ss << std::setw(2) << static_cast<int>(uuid[i]);
-        }
-        ss << "-";
-
-        // Section 4: 4 characters
-        for (int i = 8; i < 10; ++i)
-        {
-            ss << std::setw(2) << static_cast<int>(uuid[i]);
-        }
-        ss << "-";
-
-        // Section 5: 12 characters
-        for (int i = 10; i < 16; ++i)
-        {
-            ss << std::setw(2) << static_cast<int>(uuid[i]);
-        }
-
-        return ss.str();
-    }
-
-    std::array<uint8_t, 16> BLEManager::reverseUuid(const std::array<uint8_t, 16>& uuid)
-    {
-        auto reversedUuid = uuid;
-        std::ranges::reverse(reversedUuid);
-        return reversedUuid;
-    }
 
     void BLEManager::printStats()
     {
         std::array<uint8_t, 6> addr_val{};
         ble_hs_id_copy_addr(ownAddressType, addr_val.data(), nullptr);
-        const std::string serviceUUID = bleUuid128ToGuid(reverseUuid(gatt_svr_svc_uuid_bytes));
-        const std::string characteristicUUID = bleUuid128ToGuid(reverseUuid(gatt_svr_chr_uuid_bytes));
+        const std::string serviceUUID = NetworkUtilities::bleUuid128ToGuid(
+            NetworkUtilities::reverseUuid(gatt_svr_svc_uuid_bytes));
+        const std::string characteristicUUID = NetworkUtilities::bleUuid128ToGuid(
+            NetworkUtilities::reverseUuid(gatt_svr_chr_uuid_bytes));
 
         ESP_LOGI(TAG, "Device Address: %s", NetworkUtilities::macToString(addr_val.data()).c_str());
         ESP_LOGI(TAG, "Device Address Type: %d", ownAddressType);
@@ -262,46 +206,69 @@ namespace efhilton
 
         if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR)
         {
-            // Determine the length of the incoming data
+            // Determine the length of the incoming data in the mbuf
             const int len = OS_MBUF_PKTLEN(ctxt->om);
 
-            // Ensure the buffer is large enough to hold the incoming data plus a null terminator
-            if (len + 1 >= PACKET_LENGTH)
+            // Validate that the length doesn't exceed our buffer size
+            if (len >= PACKET_LENGTH) // Leave room for the null terminator if needed
             {
                 ESP_LOGE(BLEManager::TAG, "Incoming data too large for buffer");
-                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN; // Return length error
             }
 
-            // Extract the data from ctxt->om
+            // Extract the data from the mbuf into the incomingCmd buffer
             const int rc = ble_hs_mbuf_to_flat(ctxt->om, incomingCmd, len, nullptr);
             if (rc != 0)
             {
                 ESP_LOGE(BLEManager::TAG, "Error extracting data from mbuf: %d", rc);
-            }
-            else
-            {
-                auto* bleManager = static_cast<BLEManager*>(arg);
-                if (bleManager->onData != nullptr)
-                {
-                    bleManager->onData(incomingCmd, len);
-                }
+                return rc; // Return the error code
             }
 
-            return rc;
+            // Pass the extracted data to the corresponding callback, if set
+            if (onData != nullptr)
+            {
+                onData(incomingCmd, len); // Trigger the callback with extracted data
+            }
+
+            return 0; // Success
         }
+
         if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR)
         {
-            ESP_LOGI(TAG, "Read Characteristic Value Request");
-            return os_mbuf_append(ctxt->om, incomingCmd, sizeof(incomingCmd));
+            ESP_LOGI(BLEManager::TAG, "Read Characteristic Value Request");
+
+            // Append the current value of `incomingCmd` to the response buffer
+            int rc = os_mbuf_append(ctxt->om, incomingCmd, sizeof(incomingCmd));
+            if (rc != 0)
+            {
+                ESP_LOGE(BLEManager::TAG, "Error appending data to mbuf: %d", rc);
+                return rc; // Return the error code
+            }
+
+            return 0; // Success
         }
-        ESP_LOGI(TAG, "Unknown Characteristic Access Request");
-        return 0;
+
+        // Handle unknown characteristic access cases
+        ESP_LOGI(BLEManager::TAG, "Unknown Characteristic Access Request");
+        return BLE_ATT_ERR_UNLIKELY;
     }
 
     void BLEManager::defaultDataOutput(uint8_t* incomingData, int len)
     {
         const std::string incomingCmdString(reinterpret_cast<char*>(incomingData), len);
         ESP_LOGI(BLEManager::TAG, "Received command via Characteristic, value: %s", incomingCmdString.c_str());
+    }
+
+    void BLEManager::defaultConnectionCallback(bool connected)
+    {
+        if (connected)
+        {
+            ESP_LOGI(TAG, "CONNECTED");
+        }
+        else
+        {
+            ESP_LOGI(TAG, "DISCONNECTED");
+        }
     }
 
     int BLEManager::gatt_svr_init()
@@ -325,7 +292,9 @@ namespace efhilton
         mainCharacteristic.uuid = &gatt_svr_chr_uuid.u;
         mainCharacteristic.access_cb = onCharacteristicAccess;
         mainCharacteristic.arg = this;
-        mainCharacteristic.flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE;
+        mainCharacteristic.flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY;
+        mainCharacteristic.val_handle = &char_handle;
+
         static ble_gatt_chr_def characteristics[] = {
             mainCharacteristic,
             {} // no more characteristics.
@@ -335,6 +304,7 @@ namespace efhilton
         mainService.type = BLE_GATT_SVC_TYPE_PRIMARY;
         mainService.uuid = &gatt_svr_svc_uuid.u;
         mainService.characteristics = characteristics;
+
         static const ble_gatt_svc_def gatt_svr_svcs[] = {
             mainService,
             {}, // no more services.
@@ -352,15 +322,15 @@ namespace efhilton
             return rc;
         }
 
-        ESP_LOGI(TAG, "Service UUID: %s", bleUuid128ToGuid(gatt_svr_svc_uuid_bytes).c_str());
-        ESP_LOGI(TAG, "Characteristic UUID: %s", bleUuid128ToGuid(gatt_svr_chr_uuid_bytes).c_str());
+        ESP_LOGI(TAG, "Service UUID: %s", NetworkUtilities::bleUuid128ToGuid(gatt_svr_svc_uuid_bytes).c_str());
+        ESP_LOGI(TAG, "Characteristic UUID: %s", NetworkUtilities::bleUuid128ToGuid(gatt_svr_chr_uuid_bytes).c_str());
         return 0;
     }
 
 
     void BLEManager::onInitialize()
     {
-        size_t free_heap = esp_get_free_heap_size();
+        const size_t free_heap = esp_get_free_heap_size();
         ESP_LOGI(TAG, "Available heap memory before BLE initialization: %d bytes", free_heap);
 
         if (free_heap < 50000)
@@ -380,6 +350,7 @@ namespace efhilton
         ble_hs_cfg.reset_cb = onReset;
         ble_hs_cfg.sync_cb = onSync;
         ble_hs_cfg.gatts_register_cb = onGattsRegister;
+        ble_hs_cfg.gatts_register_arg = this;
         ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
         ble_hs_cfg.sm_io_cap = 3;
 
@@ -450,6 +421,61 @@ namespace efhilton
 
     void BLEManager::setOnDataCallback(const DataCallback_t& callback)
     {
-        onData = callback;
+        if (callback != nullptr)
+        {
+            onData = callback;
+        }
+        else
+        {
+            onData = this->defaultDataOutput;
+        }
+    }
+
+    void BLEManager::setConnectionStatusCallback(const ConnectionStatusCallback_t& callback)
+    {
+        if (callback != nullptr)
+        {
+            onConnectionStatus = callback;
+        }
+        else
+        {
+            onConnectionStatus = this->defaultConnectionCallback;
+        }
+    }
+
+    void BLEManager::sendMessage(const std::string& message)
+    {
+        if (conn_handle == 0)
+        {
+            // No active BLE connection
+            ESP_LOGE(TAG, "No active BLE connection. Notification not sent.");
+            return;
+        }
+
+        // Dynamically calculate the maximum allowed payload size based on the negotiated MTU
+        const int max_len = ble_att_mtu(conn_handle) - 3; // Subtract 3 bytes for the ATT header
+        if (message.size() > max_len)
+        {
+            ESP_LOGE(TAG, "Error: Message too large to send via BLE (max %d bytes allowed).", max_len);
+            return;
+        }
+
+        // Convert message string to a byte array
+        const auto* data = reinterpret_cast<const uint8_t*>(message.c_str());
+        const size_t len = message.size();
+
+        // Log the payload being sent for debugging
+        os_mbuf* om = ble_hs_mbuf_from_flat(data, len);
+        if (!om)
+        {
+            ESP_LOGE(TAG, "Error: Failed to allocate mbuf for BLE notification.");
+            return;
+        }
+
+        const int rc = ble_gatts_notify_custom(conn_handle, char_handle, om);
+        if (rc != 0)
+        {
+            ESP_LOGE(TAG, "Error: Failed to send notification (rc=%d).", rc);
+        }
     }
 }
