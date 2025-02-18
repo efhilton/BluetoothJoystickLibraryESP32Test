@@ -8,8 +8,9 @@
 
 namespace efhilton::ble
 {
-    BLEJoystick::BLEJoystick() : bleManager(std::make_unique<BLEManager>()), onTriggersCallback(nullptr),
-                                 onFunctionsCallback(nullptr), onJoysticksCallback(nullptr)
+    BLEJoystick::BLEJoystick(const std::string& deviceName) : bleManager(std::make_unique<BLEManager>(deviceName)),
+                                                              onTriggersCallback(nullptr),
+                                                              onFunctionsCallback(nullptr), onJoysticksCallback(nullptr)
     {
         setOnDisconnectedCallback(nullptr);
         setOnConnectedCallback(nullptr);
@@ -52,17 +53,28 @@ namespace efhilton::ble
                 }
             }
         });
-        bleManager->onInitialize();
     }
+
+
+    BLEJoystick::~BLEJoystick()
+    {
+        if (bleManager != nullptr)
+        {
+            bleManager.reset();
+            bleManager = nullptr;
+        }
+    }
+
 
     void BLEJoystick::setOnTriggersCallback(const std::function<void(const Trigger&)>& callback)
     {
         if (callback != nullptr)
         {
             onTriggersCallback = callback;
-        } else
+        }
+        else
         {
-            onTriggersCallback = [this](const Trigger &trigger)
+            onTriggersCallback = [this](const Trigger& trigger)
             {
                 ESP_LOGI(TAG, "Trigger %c(%d) triggered", trigger.trigger, trigger.id);
             };
@@ -184,15 +196,8 @@ namespace efhilton::ble
         }
     }
 
-    StreamBufferHandle_t streamBuffer;;
-    void BLEJoystick::sendConsoleMessage(const std::string& message)
+    size_t BLEJoystick::sendConsoleMessage(const std::string& message, const TickType_t maxDelayInTicks) const
     {
-        auto ret = xStreamBufferSend(streamBuffer, message.c_str(), message.length(), portMAX_DELAY);
-        if (ret != pdPASS)
-        {
-            ESP_LOGE(TAG, "Failed to send message to console: %d", ret);
-        }
+        return bleManager != nullptr ? bleManager->sendConsoleMessage(message, maxDelayInTicks) : 0;
     }
-
-
 };

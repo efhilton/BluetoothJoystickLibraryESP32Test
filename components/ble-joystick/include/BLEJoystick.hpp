@@ -87,14 +87,16 @@ namespace efhilton::ble
         };
 
         /**
-         * @brief Constructs a BLEJoystick object and initializes BLE communication and callbacks.
+         * @brief Constructs a BLEJoystick instance with the specified device name.
          *
-         * The constructor initializes the BLEManager instance and sets up data and connection
-         * status callbacks for handling incoming BLE data and device connection changes.
+         * This constructor initializes the BLEJoystick object, setting the name of the device
+         * that will be used for Bluetooth communication. The device name is typically used
+         * to identify the joystick during BLE advertising and connection processes.
          *
-         * @return An instance of BLEJoystick with its necessary BLE-related components initialized.
+         * @param deviceName The name of the device to be used for BLE communication.
          */
-        BLEJoystick();
+        explicit BLEJoystick(const std::string &deviceName);
+        ~BLEJoystick();
 
         /**
          * @brief Sets the callback function to handle trigger actions.
@@ -160,6 +162,18 @@ namespace efhilton::ble
          */
         void setOnDisconnectedCallback(const std::function<void()>& callback);
 
+        /**
+         * @brief Queues a console message for transmission to the BLE-connected device.
+         *
+         * This function sends a specified message to the connected BLE device. It utilizes the BLEManager to handle
+         * the communication and returns the number of bytes successfully transmitted.
+         *
+         * @param message The string message to be sent to the BLE device.
+         * @param maxDelayInTicks The maximum delay in ticks allowed for sending the message.
+         * @return The size of the message (in bytes) that was successfully sent.
+         */
+        size_t sendConsoleMessage(const std::string& message, const TickType_t maxDelayInTicks = portMAX_DELAY) const;
+
     private:
         static constexpr auto TAG{"BLEJoystick"};
 
@@ -170,7 +184,7 @@ namespace efhilton::ble
             int16_t y;
         } __attribute__((packed));
 
-        std::unique_ptr<BLEManager> bleManager{};
+        std::unique_ptr<BLEManager> bleManager;
         std::function<void(Trigger&)> onTriggersCallback;
         std::function<void(Function&)> onFunctionsCallback;
         std::function<void(Joystick&)> onJoysticksCallback;
@@ -180,7 +194,6 @@ namespace efhilton::ble
         void onRawFunctionToggled(const uint8_t* incoming_data, const int len) const;
         void onRawTriggerTriggered(const uint8_t* incoming_data, const int len) const;
         void onRawJoystickMotion(const uint8_t* incoming_data, const int len) const;
-        void sendConsoleMessage(const std::string& message);
         static double normalizeJoystickInput(const int16_t value);
 
         BLEManager::ConnectionStatusCallback_t onConnectionChangeCallback;

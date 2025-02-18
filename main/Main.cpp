@@ -39,7 +39,7 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     ESP_LOGI(TAG, "Instantiating BLE Joystick");
-    efhilton::ble::BLEJoystick joystick{};
+    efhilton::ble::BLEJoystick joystick{"Heltec Wifi V3 Tester"};
     joystick.setOnConnectedCallback([] { ESP_LOGI("MAIN", "Connected"); });
     joystick.setOnDisconnectedCallback([] { ESP_LOGI("MAIN", "Disconnected"); });
     joystick.setOnTriggersCallback([](const efhilton::ble::BLEJoystick::Trigger& trigger)
@@ -73,7 +73,15 @@ extern "C" void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(1000));
         if (sendConsoleMessages)
         {
-            efhilton::BLEManager::sendConsoleMessage("This is a really long message with id# " + std::to_string(counter++));
+            const std::string message = "This is a console message with id# " + std::to_string(counter++);
+            ESP_LOGI(TAG, "Queueing console message: '%s'", message.c_str());
+            const size_t bytesSent = joystick.sendConsoleMessage(message, portMAX_DELAY);
+            if (bytesSent == message.length())
+            {
+                ESP_LOGI(TAG, "...Queued console message: '%s'", message.c_str());
+            } else {
+                ESP_LOGE(TAG, "...Failed to queue message: '%s'", message.c_str());
+            }
         }
     }
 }

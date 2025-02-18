@@ -13,23 +13,11 @@
 #include <cstring>
 #include <esp_mac.h>
 #include <functional>
-
-#define DEVICE_NAME "Heltec V3 Tester"
-
-// UUID byte arrays.
-static constexpr std::array<uint8_t, 16> gatt_svr_svc_uuid_bytes{
-    0xf0, 0x56, 0x78, 0x12, 0x34, 0x56, 0x78, 0x12,
-    0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x12, 0xf0
-};
-
-static constexpr std::array<uint8_t, 16> gatt_svr_chr_uuid_bytes{
-    0x12, 0x90, 0x78, 0x56, 0xef, 0xcd, 0x12, 0xab,
-    0x90, 0x78, 0x56, 0x34, 0x12, 0xef, 0xcd, 0xab
-};
+#include <freertos/ringbuf.h>
 
 static uint8_t ownAddressType;
 
-namespace efhilton
+namespace efhilton::ble
 {
     BLEManager::DataCallback_t onData;
     BLEManager::ConnectionStatusCallback_t onConnectionStatus;
@@ -138,9 +126,9 @@ namespace efhilton
         std::array<uint8_t, 6> addr_val{};
         ble_hs_id_copy_addr(ownAddressType, addr_val.data(), nullptr);
         const std::string serviceUUID = NetworkUtilities::bleUuid128ToGuid(
-            NetworkUtilities::reverseUuid(gatt_svr_svc_uuid_bytes));
+            NetworkUtilities::reverseUuid(gattServiceBleManagerUuidBytes));
         const std::string characteristicUUID = NetworkUtilities::bleUuid128ToGuid(
-            NetworkUtilities::reverseUuid(gatt_svr_chr_uuid_bytes));
+            NetworkUtilities::reverseUuid(gattCharacteristicBleManagerUuidBytes));
 
         ESP_LOGI(TAG, "Device Address: %s", NetworkUtilities::macToString(addr_val.data()).c_str());
         ESP_LOGI(TAG, "Device Address Type: %d", ownAddressType);
@@ -280,13 +268,13 @@ namespace efhilton
         gatt_svr_svc_uuid.u = {
             .type = BLE_UUID_TYPE_128
         };
-        memcpy(gatt_svr_svc_uuid.value, gatt_svr_svc_uuid_bytes.data(), sizeof(gatt_svr_svc_uuid.value));
+        memcpy(gatt_svr_svc_uuid.value, gattServiceBleManagerUuidBytes.data(), sizeof(gatt_svr_svc_uuid.value));
 
         static ble_uuid128_t gatt_svr_chr_uuid{};
         gatt_svr_chr_uuid.u = {
             .type = BLE_UUID_TYPE_128
         };
-        memcpy(gatt_svr_chr_uuid.value, gatt_svr_chr_uuid_bytes.data(), sizeof(gatt_svr_chr_uuid.value));
+        memcpy(gatt_svr_chr_uuid.value, gattCharacteristicBleManagerUuidBytes.data(), sizeof(gatt_svr_chr_uuid.value));
 
         ble_gatt_chr_def mainCharacteristic{};
         mainCharacteristic.uuid = &gatt_svr_chr_uuid.u;
@@ -321,14 +309,76 @@ namespace efhilton
         {
             return rc;
         }
-
-        ESP_LOGI(TAG, "Service UUID: %s", NetworkUtilities::bleUuid128ToGuid(gatt_svr_svc_uuid_bytes).c_str());
-        ESP_LOGI(TAG, "Characteristic UUID: %s", NetworkUtilities::bleUuid128ToGuid(gatt_svr_chr_uuid_bytes).c_str());
         return 0;
     }
 
 
-    void BLEManager::onInitialize()
+    void BLEManager::transmissionTask(void* args)
+    {
+        const auto* bleManager = static_cast<BLEManager*>(args);
+        xEventGroupSetBits(bleManager->eventGroup, bleManager->EVENT_TASK_IS_RUNNING);
+        ESP_LOGI(TAG, "BLE transmission task started");
+        const int bitsToWaitFor = bleManager->EVENT_CONSOLE_DATA_AVAILABLE | bleManager->EVENT_DO_SHUTDOWN;
+        while (true)
+        {
+            const EventBits_t bits = xEventGroupWaitBits(bleManager->eventGroup, bitsToWaitFor
+                                                         , false, true, portMAX_DELAY);
+            if (bits & bleManager->EVENT_DO_SHUTDOWN)
+            {
+                ESP_LOGI(TAG, "Shutting down transmission thread");
+                break;
+            }
+
+            if (bits & bleManager->EVENT_CONSOLE_DATA_AVAILABLE)
+            {
+                while (true)
+                {
+                    char consoleMessage[255]{};
+                    const size_t bytesRead = xMessageBufferReceive(bleManager->messageBuffer,
+                                                                   consoleMessage, sizeof(consoleMessage),
+                                                                   0);
+                    if (bytesRead == 0)
+                    {
+                        break;
+                    }
+                    putConsoleMessageOnWire(consoleMessage, bytesRead);
+                }
+            }
+        }
+        xEventGroupSetBits(bleManager->eventGroup, bleManager->EVENT_TASK_IS_SHUT_DOWN);
+    }
+
+    void BLEManager::setupTransmissionThread()
+    {
+        if (xEventGroupGetBits(eventGroup) & EVENT_TASK_IS_RUNNING)
+        {
+            ESP_LOGI(TAG, "Transmission thread already running");
+            return;
+        }
+
+        ESP_LOGI(TAG, "Starting transmission thread");
+        xTaskCreate(transmissionTask, TAG, 4096, this, 5, &transmissionTaskHandle);
+
+        ESP_LOGI(TAG, "Waiting for transmission thread to start");
+        xEventGroupWaitBits(eventGroup, EVENT_TASK_IS_RUNNING, false, true, portMAX_DELAY);
+        ESP_LOGI(TAG, "Transmission thread started");
+    }
+
+    void BLEManager::shutdownTransmissionThread() const
+    {
+        if (xEventGroupGetBits(eventGroup) & (EVENT_DO_SHUTDOWN | EVENT_TASK_IS_SHUT_DOWN))
+        {
+            ESP_LOGI(TAG, "Transmission thread already shutting down");
+            return;
+        }
+        ESP_LOGI(TAG, "Shutting down transmission thread");
+        xEventGroupSetBits(eventGroup, EVENT_DO_SHUTDOWN);
+        ESP_LOGI(TAG, "Waiting for transmission thread to shut down");
+        xEventGroupWaitBits(eventGroup, EVENT_TASK_IS_SHUT_DOWN, false, true, portMAX_DELAY);
+        ESP_LOGI(TAG, "Transmission thread shut down");
+    }
+
+    void BLEManager::onInitialize(const std::string& deviceName)
     {
         const size_t free_heap = esp_get_free_heap_size();
         ESP_LOGI(TAG, "Available heap memory before BLE initialization: %d bytes", free_heap);
@@ -361,7 +411,7 @@ namespace efhilton
             return;
         }
 
-        ret = ble_svc_gap_device_name_set(DEVICE_NAME);
+        ret = ble_svc_gap_device_name_set(deviceName.c_str());
         if (ret != ESP_OK)
         {
             ESP_LOGE(TAG, "Setting BLE device name failed: %s", esp_err_to_name(ret));
@@ -370,11 +420,15 @@ namespace efhilton
         ESP_LOGI(TAG, "Device name set successfully.");
 
         nimble_port_freertos_init(hostTask);
+
+        setupTransmissionThread();
         ESP_LOGI(TAG, "Bluetooth initialization successfully completed.");
     }
 
-    void BLEManager::onTerminate()
+    void BLEManager::onTerminate() const
     {
+        shutdownTransmissionThread();
+
         esp_err_t stop_ret = nimble_port_stop();
         if (stop_ret != ESP_OK)
         {
@@ -400,6 +454,7 @@ namespace efhilton
         }
 
         ESP_LOGI(TAG, "NimBLE HCI deinitialized successfully.");
+
         ESP_LOGI(TAG, "Bluetooth termination completed successfully.");
     }
 
@@ -419,7 +474,7 @@ namespace efhilton
         return macAddress;
     }
 
-    void BLEManager::setOnDataCallback(const DataCallback_t& callback) const
+    void BLEManager::setOnDataCallback(const DataCallback_t& callback)
     {
         if (callback != nullptr)
         {
@@ -427,11 +482,11 @@ namespace efhilton
         }
         else
         {
-            onData = this->defaultDataOutput;
+            onData = defaultDataOutput;
         }
     }
 
-    void BLEManager::setConnectionStatusCallback(const ConnectionStatusCallback_t& callback) const
+    void BLEManager::setConnectionStatusCallback(const ConnectionStatusCallback_t& callback)
     {
         if (callback != nullptr)
         {
@@ -439,11 +494,25 @@ namespace efhilton
         }
         else
         {
-            onConnectionStatus = this->defaultConnectionCallback;
+            onConnectionStatus = defaultConnectionCallback;
         }
     }
 
-    size_t BLEManager::sendConsoleMessage(const std::string& consoleMessage)
+    size_t BLEManager::sendConsoleMessage(const std::string& consoleMessage, const TickType_t maxWaitTimeInTicks) const
+    {
+        if (messageBuffer == nullptr) return 0;
+
+        size_t bytesAdded = xMessageBufferSend(messageBuffer,
+                                               consoleMessage.c_str(), consoleMessage.length(),
+                                               maxWaitTimeInTicks);
+        if (bytesAdded == consoleMessage.length())
+        {
+            xEventGroupSetBits(eventGroup, EVENT_CONSOLE_DATA_AVAILABLE);
+        }
+        return bytesAdded;
+    }
+
+    size_t BLEManager::putConsoleMessageOnWire(const char* consoleMessage, const size_t length)
     {
         if (conn_handle == 0)
         {
@@ -452,8 +521,8 @@ namespace efhilton
         }
 
         const size_t max_len = ble_att_mtu(conn_handle) - 3;
-        const std::string eofSequence = "\r\nEOF\r\n";    // used to signal that the message is complete.
-        const std::string message = consoleMessage + eofSequence;
+        const std::string eofSequence = "\r\nEOF\r\n"; // used to signal that the message is complete.
+        const std::string message = std::string(consoleMessage, length) + eofSequence;
 
         size_t charsSent = 0;
         while (charsSent < message.length())

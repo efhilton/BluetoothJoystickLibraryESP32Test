@@ -1,4 +1,4 @@
 dependencies:
-  network-support:
-    path: ../components/network-support
+  ble-joystick:
+    path: ../components/ble-joystick
     version: "1.0.0"
