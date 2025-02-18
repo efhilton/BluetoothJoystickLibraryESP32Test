@@ -5,6 +5,15 @@
 
 namespace efhilton::ble
 {
+    /**
+     * @class BLEJoystick
+     * @brief Represents a BLE joystick interface for managing communication and events.
+     *
+     * The BLEJoystick class provides an abstraction for handling joystick interactions over
+     * Bluetooth Low Energy (BLE). It supports callbacks for joystick events, functions, and triggers,
+     * as well as connection and disconnection events. The class integrates with a BLEManager
+     * to manage BLE-related functionality.
+     */
     class BLEJoystick
     {
     public:
@@ -17,7 +26,7 @@ namespace efhilton::ble
          * or toggle in the BLEJoystick system.
          *
          * Members:
-         * - function: A character representing the function type or identifier (e.g., 'F').
+         * - function: A character representing the function type or identifier (this is always 'F').
          * - id: An 8-bit integer representing the unique ID of the function.
          * - state: A boolean indicating the current state of the function,
          *          such as ON (true) or OFF (false).
@@ -38,7 +47,7 @@ namespace efhilton::ble
          * and handling within the BLEJoystick functionalities.
          *
          * Members:
-         * - trigger: A character representing the type or identifier of the trigger event.
+         * - trigger: A character representing the type or identifier of the trigger event. This is always 'T'.
          * - id: An 8-bit integer denoting the unique ID associated with the trigger.
          */
         struct Trigger
@@ -78,43 +87,72 @@ namespace efhilton::ble
         BLEJoystick();
 
         /**
-         * @brief Sets the callback function for handling trigger events.
+         * @brief Sets the callback function to handle trigger actions.
          *
-         * This method sets a callback function that will be invoked when
-         * a trigger event occurs in the BLEJoystick system. The callback
-         * allows users to handle trigger-specific logic.
+         * This method allows the user to define a custom callback function that is invoked
+         * whenever a specific trigger is activated. If no callback is provided (nullptr),
+         * a default action will be executed, which logs the trigger information.
          *
-         * @param callback A std::function taking a const Trigger reference
-         *                 as an argument. It defines the logic to execute
-         *                 when a trigger event is detected.
+         * @param callback A std::function that takes a const reference to a Trigger object as input.
+         *                 The callback is invoked when a trigger event occurs.
          */
         void setOnTriggersCallback(const std::function<void(const Trigger&)>& callback);
 
         /**
-         * @brief Sets the callback function to be invoked when a function is triggered or updated.
+         * @brief Sets the callback function for handling BLE function events.
          *
-         * This method assigns a user-defined callback function. The callback is executed
-         * whenever a function-related event occurs within the BLEJoystick system, passing the
-         * corresponding function data as an argument.
+         * This method allows the user to register a callback function that will be
+         * triggered when a Function event occurs in the BLEJoystick system. If a null
+         * callback is provided, a default logging functionality will be applied.
          *
-         * @param callback A std::function that takes a single parameter of type `const Function&`.
-         *                 It defines the operation to perform when the event is triggered.
+         * @param callback A std::function callback that takes a constant reference
+         *                 to a Function object. This callback will handle the event
+         *                 related to the specified function.
          */
         void setOnFunctionsCallback(const std::function<void(const Function&)>& callback);
 
         /**
-         * @brief Sets a callback function for joystick events.
+         * @brief Sets the callback function to handle joystick input events.
          *
-         * This method allows users to define a callback function that will be invoked
-         * whenever a joystick event occurs. The provided callback receives a reference
-         * to a `Joystick` object containing information about the event.
+         * This method allows you to specify a custom callback function that will
+         * be invoked whenever joystick input events are received. The callback
+         * receives a reference to a Joystick object containing the details of the
+         * joystick event.
          *
-         * @param callback A `std::function` object that takes a `const Joystick&` as
-         *                 an argument. This function is called during joystick events.
+         * @param callback A function object that takes a const reference to a Joystick
+         *                 instance and performs actions based on the joystick event.
+         *                 If nullptr is passed, a default logging callback will be used.
          */
         void setOnJoysticksCallback(const std::function<void(const Joystick&)>& callback);
 
+        /**
+         * @brief Sets the callback function to be executed when the joystick is connected.
+         *
+         * This method allows the user to provide a custom function that will be invoked
+         * upon a successful BLE connection. If no callback is provided, a default callback
+         * will print a "Connected" message using ESP logging.
+         *
+         * @param callback A `std::function<void()>` representing the custom function to execute
+         *                 when the BLE joystick is connected. If nullptr is provided, a default
+         *                 implementation is used.
+         */
+        void setOnConnectedCallback(const std::function<void()>& callback);
+
+        /**
+         * @brief Sets the callback function to be called when the BLE device is disconnected.
+         *
+         * This method allows the user to specify a custom function that will be invoked
+         * when the BLE connection is terminated. If no valid callback is provided, a default
+         * action will be used.
+         *
+         * @param callback A standard function object (std::function) with no parameters that defines
+         *                 the actions to be executed upon disconnection.
+         */
+        void setOnDisconnectedCallback(const std::function<void()>& callback);
+
     private:
+        static constexpr auto TAG{"BLEJoystick"};
+
         struct JoystickRaw
         {
             char joystick;
@@ -126,14 +164,14 @@ namespace efhilton::ble
         std::function<void(Trigger&)> onTriggersCallback;
         std::function<void(Function&)> onFunctionsCallback;
         std::function<void(Joystick&)> onJoysticksCallback;
+        std::function<void()> onConnectedCallback;
+        std::function<void()> onDisconnectedCallback;
 
-        void onFunctionToggled(const uint8_t* incoming_data, const int len) const;
+        void onRawFunctionToggled(const uint8_t* incoming_data, const int len) const;
+        void onRawTriggerTriggered(const uint8_t* incoming_data, const int len) const;
+        void onRawJoystickMotion(const uint8_t* incoming_data, const int len) const;
+        static double normalizeJoystickInput(const int16_t value);
 
-        void onTrigger(const uint8_t* incoming_data, const int len) const;
-
-        static double normalized(int16_t value);
-
-        void onJoystick(const uint8_t* incoming_data, const int len);
         BLEManager::ConnectionStatusCallback_t onConnectionChangeCallback;
         BLEManager::DataCallback_t onDataCallback;
     };

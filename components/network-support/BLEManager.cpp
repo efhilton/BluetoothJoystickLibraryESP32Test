@@ -419,7 +419,7 @@ namespace efhilton
         return macAddress;
     }
 
-    void BLEManager::setOnDataCallback(const DataCallback_t& callback)
+    void BLEManager::setOnDataCallback(const DataCallback_t& callback) const
     {
         if (callback != nullptr)
         {
@@ -431,7 +431,7 @@ namespace efhilton
         }
     }
 
-    void BLEManager::setConnectionStatusCallback(const ConnectionStatusCallback_t& callback)
+    void BLEManager::setConnectionStatusCallback(const ConnectionStatusCallback_t& callback) const
     {
         if (callback != nullptr)
         {
