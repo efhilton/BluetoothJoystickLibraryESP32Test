@@ -24,7 +24,7 @@ void configureLEDPinForOutput()
 
 extern "C" void app_main(void)
 {
-    bool sendWoohoos = false;
+    bool sendConsoleMessages = false;
     configureLEDPinForOutput();
 
     const auto TAG = "BLE_TEST";
@@ -40,20 +40,24 @@ extern "C" void app_main(void)
 
     ESP_LOGI(TAG, "Instantiating BLE Joystick");
     efhilton::ble::BLEJoystick joystick{};
+    joystick.setOnConnectedCallback([] { ESP_LOGI("MAIN", "Connected"); });
+    joystick.setOnDisconnectedCallback([] { ESP_LOGI("MAIN", "Disconnected"); });
     joystick.setOnTriggersCallback([](const efhilton::ble::BLEJoystick::Trigger& trigger)
     {
         ESP_LOGI("MAIN", "Trigger '%c%d' triggered", trigger.trigger, trigger.id);
     });
-    joystick.setOnFunctionsCallback([&sendWoohoos](const efhilton::ble::BLEJoystick::Function& function)
+    joystick.setOnFunctionsCallback([&sendConsoleMessages](const efhilton::ble::BLEJoystick::Function& function)
     {
         ESP_LOGI("MAIN", "Function '%c%d' toggled to %d", function.function, function.id, function.state);
         if (function.id == 0)
         {
+            // toggle an LED
             gpio_set_level(LED_GPIO_NUM, function.state);
         }
         if (function.id == 1)
         {
-            sendWoohoos = function.state;
+            // transmit console messages back to the remote android device.
+            sendConsoleMessages = function.state;
         }
     });
     joystick.setOnJoysticksCallback([](const efhilton::ble::BLEJoystick::Joystick& j)
@@ -67,9 +71,9 @@ extern "C" void app_main(void)
     while (true)
     {
         vTaskDelay(pdMS_TO_TICKS(1000));
-        if (sendWoohoos)
+        if (sendConsoleMessages)
         {
-            efhilton::BLEManager::sendMessage("Wooohooo! " + std::to_string(counter++));
+            efhilton::BLEManager::sendConsoleMessage("This is a really long message with id# " + std::to_string(counter++));
         }
     }
 }

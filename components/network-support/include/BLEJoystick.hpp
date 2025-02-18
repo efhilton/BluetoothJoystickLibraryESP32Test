@@ -7,12 +7,14 @@ namespace efhilton::ble
 {
     /**
      * @class BLEJoystick
-     * @brief Represents a BLE joystick interface for managing communication and events.
+     * @brief Represents a BLE joystick interface for managing communication and events from its Android counterpart
+     * found <a href="https://github.com/efhilton/BluetoothJoystick">here</a>
      *
      * The BLEJoystick class provides an abstraction for handling joystick interactions over
      * Bluetooth Low Energy (BLE). It supports callbacks for joystick events, functions, and triggers,
      * as well as connection and disconnection events. The class integrates with a BLEManager
-     * to manage BLE-related functionality.
+     * to manage BLE-related functionality. This is intended to be used alongside its Android counterpart found at
+     * <a href="https://github.com/efhilton/BluetoothJoystick">https://github.com/efhilton/BluetoothJoystick</a>
      */
     class BLEJoystick
     {
@@ -33,8 +35,11 @@ namespace efhilton::ble
          */
         struct Function
         {
+            // This is always 'F'
             char function;
+            // The id to the function.
             int8_t id;
+            // The value, true or false.
             bool state;
         };
 
@@ -52,7 +57,9 @@ namespace efhilton::ble
          */
         struct Trigger
         {
+            // This is always 'T'
             char trigger;
+            // The unique identifier to the trigger.
             int8_t id;
         };
 
@@ -71,8 +78,11 @@ namespace efhilton::ble
          */
         struct Joystick
         {
+            // The identifier to either the left ('L') or right ('R') joystick.
             char joystick;
+            // The x value, normalized [-1.0, 1.0]
             double x;
+            // The y value, normalized [-1.0, 1.0]
             double y;
         };
 
@@ -153,7 +163,7 @@ namespace efhilton::ble
     private:
         static constexpr auto TAG{"BLEJoystick"};
 
-        struct JoystickRaw
+        struct RawJoystickData
         {
             char joystick;
             int16_t x;
@@ -170,6 +180,7 @@ namespace efhilton::ble
         void onRawFunctionToggled(const uint8_t* incoming_data, const int len) const;
         void onRawTriggerTriggered(const uint8_t* incoming_data, const int len) const;
         void onRawJoystickMotion(const uint8_t* incoming_data, const int len) const;
+        void sendConsoleMessage(const std::string& message);
         static double normalizeJoystickInput(const int16_t value);
 
         BLEManager::ConnectionStatusCallback_t onConnectionChangeCallback;

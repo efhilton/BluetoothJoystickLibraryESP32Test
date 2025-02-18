@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <freertos/ringbuf.h>
 
 
 namespace efhilton::ble
@@ -166,12 +167,12 @@ namespace efhilton::ble
             ESP_LOGI(TAG, "Unknown joystick: %d", incoming_data[0]);
             return;
         }
-        if (len != sizeof(JoystickRaw))
+        if (len != sizeof(RawJoystickData))
         {
-            ESP_LOGI(TAG, "Joystick data length incorrect: %d, expected %d", len, sizeof(JoystickRaw));
+            ESP_LOGI(TAG, "Joystick data length incorrect: %d, expected %d", len, sizeof(RawJoystickData));
             return;
         }
-        JoystickRaw j = *reinterpret_cast<const JoystickRaw*>(incoming_data);
+        RawJoystickData j = *reinterpret_cast<const RawJoystickData*>(incoming_data);
         Joystick joystick{
             .joystick = j.joystick,
             .x = normalizeJoystickInput(j.x),
@@ -182,4 +183,16 @@ namespace efhilton::ble
             onJoysticksCallback(joystick);
         }
     }
+
+    StreamBufferHandle_t streamBuffer;;
+    void BLEJoystick::sendConsoleMessage(const std::string& message)
+    {
+        auto ret = xStreamBufferSend(streamBuffer, message.c_str(), message.length(), portMAX_DELAY);
+        if (ret != pdPASS)
+        {
+            ESP_LOGE(TAG, "Failed to send message to console: %d", ret);
+        }
+    }
+
+
 };

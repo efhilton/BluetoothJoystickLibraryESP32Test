@@ -1,9 +1,14 @@
-# BLE Test
+# BLE Joystick Library
 
 # Overview
 
-This project attempts to set up basic BLE functionality, publishing a set of services which then react
-to command controls from an external Bluetooth application.
+This project sets up basic BLE functionality in an ESP32 device.
+
+Specifically, a remote device can enable/disable functions, trigger events, send joystick
+events, and receive console messages from this embedded device -- all via Bluetooth Low Energy.
+
+This code is intended to work in conjunction with its Android counterpart that can be found
+at [https://github.com/efhilton/BluetoothJoystick](https://github.com/efhilton/BluetoothJoystick)
 
 # Questions?
 

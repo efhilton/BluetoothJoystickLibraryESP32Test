@@ -443,39 +443,42 @@ namespace efhilton
         }
     }
 
-    void BLEManager::sendMessage(const std::string& message)
+    size_t BLEManager::sendConsoleMessage(const std::string& consoleMessage)
     {
         if (conn_handle == 0)
         {
-            // No active BLE connection
             ESP_LOGE(TAG, "No active BLE connection. Notification not sent.");
-            return;
+            return 0;
         }
 
-        // Dynamically calculate the maximum allowed payload size based on the negotiated MTU
-        const int max_len = ble_att_mtu(conn_handle) - 3; // Subtract 3 bytes for the ATT header
-        if (message.size() > max_len)
+        const size_t max_len = ble_att_mtu(conn_handle) - 3;
+        const std::string eofSequence = "\r\nEOF\r\n";    // used to signal that the message is complete.
+        const std::string message = consoleMessage + eofSequence;
+
+        size_t charsSent = 0;
+        while (charsSent < message.length())
         {
-            ESP_LOGE(TAG, "Error: Message too large to send via BLE (max %d bytes allowed).", max_len);
-            return;
-        }
+            const size_t len = std::min(message.length() - charsSent, max_len);
+            std::string chunk = message.substr(charsSent, len);
 
-        // Convert message string to a byte array
-        const auto* data = reinterpret_cast<const uint8_t*>(message.c_str());
-        const size_t len = message.size();
+            os_mbuf* om = ble_hs_mbuf_from_flat(chunk.c_str(), chunk.length());
+            if (!om)
+            {
+                ESP_LOGE(TAG, "Error: Failed to allocate mbuf for BLE notification.");
+                return charsSent;
+            }
 
-        // Log the payload being sent for debugging
-        os_mbuf* om = ble_hs_mbuf_from_flat(data, len);
-        if (!om)
-        {
-            ESP_LOGE(TAG, "Error: Failed to allocate mbuf for BLE notification.");
-            return;
+            // Note that this method frees om internally. This does not make sense to me, but they do.
+            // If you try to free om here in our method, then it will cause a lockup next time you try to run this
+            // method.
+            const int rc = ble_gatts_notify_custom(conn_handle, char_handle, om);
+            if (rc != 0)
+            {
+                ESP_LOGE(TAG, "Error: Failed to send notification (rc=%d).", rc);
+                return charsSent;
+            }
+            charsSent += len;
         }
-
-        const int rc = ble_gatts_notify_custom(conn_handle, char_handle, om);
-        if (rc != 0)
-        {
-            ESP_LOGE(TAG, "Error: Failed to send notification (rc=%d).", rc);
-        }
+        return charsSent;
     }
 }

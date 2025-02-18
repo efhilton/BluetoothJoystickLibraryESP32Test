@@ -23,7 +23,7 @@ namespace efhilton
         [[nodiscard]] const std::string& getMacAddress();
         void setOnDataCallback(const DataCallback_t& callback) const;
         void setConnectionStatusCallback(const ConnectionStatusCallback_t& callback) const;
-        static void sendMessage(const std::string& message) ;
+        static size_t sendConsoleMessage(const std::string& consoleMessage) ;
 
     private:
         static constexpr int MIN_REQUIRED_HEAP = 1024 * 10;
