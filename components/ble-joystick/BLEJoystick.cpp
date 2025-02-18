@@ -18,7 +18,7 @@ namespace efhilton::ble
         setOnTriggersCallback(nullptr);
         setOnJoysticksCallback(nullptr);
 
-        bleManager->setOnDataCallback([this](const uint8_t* incomingData, const int len)
+        BLEManager::setOnDataCallback([this](const uint8_t* incomingData, const int len)
         {
             switch (incomingData[0])
             {
@@ -36,7 +36,7 @@ namespace efhilton::ble
                 ESP_LOGI(TAG, "Unknown command: %d", incomingData[0]);
             }
         });
-        bleManager->setConnectionStatusCallback([this](const bool isConnected)
+        BLEManager::setConnectionStatusCallback([this](const bool isConnected)
         {
             if (isConnected)
             {
@@ -60,6 +60,8 @@ namespace efhilton::ble
     {
         if (bleManager != nullptr)
         {
+            BLEManager::setOnDataCallback(nullptr);
+            BLEManager::setConnectionStatusCallback(nullptr);
             bleManager.reset();
             bleManager = nullptr;
         }

@@ -27,10 +27,10 @@ namespace efhilton::ble
         }
 
         [[nodiscard]] const std::string& getMacAddress();
-        static void setOnDataCallback(const DataCallback_t& callback) ;
-        static void setConnectionStatusCallback(const ConnectionStatusCallback_t& callback) ;
+        static void setOnDataCallback(const DataCallback_t& callback);
+        static void setConnectionStatusCallback(const ConnectionStatusCallback_t& callback);
         size_t sendConsoleMessage(const std::string& consoleMessage,
-                                  const TickType_t maxWaitTimeInTicks = portMAX_DELAY) const;
+                                  TickType_t maxWaitTimeInTicks = portMAX_DELAY) const;
         static size_t putConsoleMessageOnWire(const char* consoleMessage, size_t length);
 
     private:

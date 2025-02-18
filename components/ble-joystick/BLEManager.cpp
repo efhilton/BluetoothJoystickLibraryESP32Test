@@ -181,8 +181,7 @@ namespace efhilton::ble
             break;
 
         default:
-            assert(0);
-            break;
+            ESP_LOGI(TAG, "unknown gatts register op: %d", ctxt->op);
         }
     }
 
@@ -321,8 +320,9 @@ namespace efhilton::ble
         const int bitsToWaitFor = bleManager->EVENT_CONSOLE_DATA_AVAILABLE | bleManager->EVENT_DO_SHUTDOWN;
         while (true)
         {
-            const EventBits_t bits = xEventGroupWaitBits(bleManager->eventGroup, bitsToWaitFor
-                                                         , false, true, portMAX_DELAY);
+            const EventBits_t bits = xEventGroupWaitBits(bleManager->eventGroup,
+                                                         bitsToWaitFor, true, false,
+                                                         portMAX_DELAY);
             if (bits & bleManager->EVENT_DO_SHUTDOWN)
             {
                 ESP_LOGI(TAG, "Shutting down transmission thread");
@@ -331,9 +331,9 @@ namespace efhilton::ble
 
             if (bits & bleManager->EVENT_CONSOLE_DATA_AVAILABLE)
             {
+                char consoleMessage[255]{};
                 while (true)
                 {
-                    char consoleMessage[255]{};
                     const size_t bytesRead = xMessageBufferReceive(bleManager->messageBuffer,
                                                                    consoleMessage, sizeof(consoleMessage),
                                                                    0);
@@ -482,6 +482,7 @@ namespace efhilton::ble
         }
         else
         {
+            ESP_LOGI(TAG, "Setting default callback for data output.");
             onData = defaultDataOutput;
         }
     }
@@ -494,17 +495,25 @@ namespace efhilton::ble
         }
         else
         {
+            ESP_LOGI(TAG, "Setting default callback for connection status.");
             onConnectionStatus = defaultConnectionCallback;
         }
     }
 
     size_t BLEManager::sendConsoleMessage(const std::string& consoleMessage, const TickType_t maxWaitTimeInTicks) const
     {
-        if (messageBuffer == nullptr) return 0;
+        if (messageBuffer == nullptr) { return 0; }
+        if (consoleMessage.length() > MAX_SIZE_OF_CONSOLE_MESSAGE)
+        {
+            throw std::runtime_error(
+                "Console message (" + std::to_string(consoleMessage.length()) +
+                " characters) is too long. It should be no longer than " + std::to_string(MAX_SIZE_OF_CONSOLE_MESSAGE) +
+                " characters.");
+        }
 
-        size_t bytesAdded = xMessageBufferSend(messageBuffer,
-                                               consoleMessage.c_str(), consoleMessage.length(),
-                                               maxWaitTimeInTicks);
+        const size_t bytesAdded = xMessageBufferSend(messageBuffer,
+                                                     consoleMessage.c_str(), consoleMessage.length(),
+                                                     maxWaitTimeInTicks);
         if (bytesAdded == consoleMessage.length())
         {
             xEventGroupSetBits(eventGroup, EVENT_CONSOLE_DATA_AVAILABLE);

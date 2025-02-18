@@ -168,11 +168,12 @@ namespace efhilton::ble
          * This function sends a specified message to the connected BLE device. It utilizes the BLEManager to handle
          * the communication and returns the number of bytes successfully transmitted.
          *
+         * @warning This method is not thread safe.
          * @param message The string message to be sent to the BLE device.
          * @param maxDelayInTicks The maximum delay in ticks allowed for sending the message.
          * @return The size of the message (in bytes) that was successfully sent.
          */
-        size_t sendConsoleMessage(const std::string& message, const TickType_t maxDelayInTicks = portMAX_DELAY) const;
+        size_t sendConsoleMessage(const std::string& message, TickType_t maxDelayInTicks = portMAX_DELAY) const;
 
     private:
         static constexpr auto TAG{"BLEJoystick"};
