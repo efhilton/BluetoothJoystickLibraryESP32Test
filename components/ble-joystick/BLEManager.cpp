@@ -523,6 +523,7 @@ namespace efhilton::ble
 
     size_t BLEManager::putConsoleMessageOnWire(const char* consoleMessage, const size_t length)
     {
+        const std::string EOF_SEQUENCE {"\r\nEOF\r\n"}; // used to signal that the message is complete.
         if (conn_handle == 0)
         {
             ESP_LOGE(TAG, "No active BLE connection. Notification not sent.");
@@ -530,8 +531,7 @@ namespace efhilton::ble
         }
 
         const size_t max_len = ble_att_mtu(conn_handle) - 3;
-        const std::string eofSequence = "\r\nEOF\r\n"; // used to signal that the message is complete.
-        const std::string message = std::string(consoleMessage, length) + eofSequence;
+        const std::string message = std::string(consoleMessage, length) + EOF_SEQUENCE;
 
         size_t charsSent = 0;
         while (charsSent < message.length())
