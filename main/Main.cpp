@@ -116,7 +116,7 @@ extern "C" void app_main(void)
             else if (function.id == 1)
             {
                 std::stringstream ss{};
-                ss << (function.state ? "Enabling" : "Disabling") << " Periodic Console Messages";
+                ss << (function.state ? "Enabling" : "Disabling") << " Periodic Console Messages (1 every 10 secs)";
                 joystick.sendConsoleMessage(ss.str());
                 // transmit console messages back to the remote android device.
                 sendConsoleMessages = function.state;
