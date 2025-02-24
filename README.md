@@ -7,7 +7,7 @@ test a separately developed BLE Joystick library for my ESP32. Specifically, a r
 
 This code is intended to work in conjunction with:
 - the [Android App](https://github.com/efhilton/BluetoothJoystick).  I wrote this to work on my Pixel 8 with the latest APIs.
-- the [BLE ESP-IDF Joystick](https://github.com/efhilton/BluetoothJoystickESP32) Library itself, which should be added as a git submodule under `components/ble-joystick`
+- the [BLE ESP-IDF Joystick](https://github.com/efhilton/BluetoothJoystickLibraryESP32) Library itself, which should be added as a git submodule under `components/ble-joystick`
 
 As of the time of this writing, this code presently implements the following Functions:
 
