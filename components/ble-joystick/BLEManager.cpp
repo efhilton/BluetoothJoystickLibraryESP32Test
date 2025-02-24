@@ -40,6 +40,7 @@ namespace efhilton::ble
             else
             {
                 ESP_LOGE("BLEManager", "Connection failed; status=%d", event->connect.status);
+                bleAdvertise();
             }
             return 0;
 
@@ -49,6 +50,7 @@ namespace efhilton::ble
             {
                 onConnectionStatus(false);
             }
+            bleAdvertise();
             return 0;
 
         case BLE_GAP_EVENT_ADV_COMPLETE:

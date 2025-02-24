@@ -132,11 +132,11 @@ namespace efhilton::ble
     {
         if (callback != nullptr)
         {
-            onConnectedCallback = callback;
+            onDisconnectedCallback = callback;
         }
         else
         {
-            onConnectedCallback = [this]()
+            onDisconnectedCallback = [this]()
             {
                 ESP_LOGI(TAG, "Disconnected");
             };
