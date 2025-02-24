@@ -1,0 +1,3 @@
+[submodule "components/ble-joystick"]
+	path = components/ble-joystick
+	url = https://github.com/efhilton/BluetoothJoystickLibraryESP32
