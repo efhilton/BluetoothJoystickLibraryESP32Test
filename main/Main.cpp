@@ -12,7 +12,6 @@
 #include <soc/gpio_num.h>
 
 gpio_num_t LED_GPIO_NUM{GPIO_NUM_35};
-
 gpio_num_t PWM_LR_GPIO_NUM{GPIO_NUM_0};
 gpio_num_t PWM_UD_GPIO_NUM{GPIO_NUM_2};
 
@@ -77,9 +76,9 @@ void setDutyCycleToPct(const ledc_channel_t channel, const uint32_t dutyCyclePct
     ledc_update_duty(LEDC_LOW_SPEED_MODE, channel);
 }
 
+
 extern "C" void app_main(void)
 {
-    bool sendConsoleMessages = false;
     enableOutputPin(LED_GPIO_NUM, false);
 
     const auto TAG = "BLE_TEST";
@@ -95,14 +94,9 @@ extern "C" void app_main(void)
 
     ESP_LOGI(TAG, "Instantiating BLE Joystick");
     efhilton::ble::BLEJoystick joystick{"Heltec Wifi V3 Tester"};
-    joystick.setOnConnectedCallback([] { ESP_LOGI("MAIN", "BLE JOYSTICK CONNECTED"); });
-    joystick.setOnDisconnectedCallback([] { ESP_LOGI("MAIN", "BLE JOYSTICK DISCONNECTED"); });
-    joystick.setOnTriggersCallback([](const efhilton::ble::BLEJoystick::Trigger& trigger)
-    {
-        ESP_LOGI("MAIN", "Trigger '%c%d' triggered", trigger.trigger, trigger.id);
-    });
-    joystick.setOnFunctionsCallback(
-        [&sendConsoleMessages, &joystick](const efhilton::ble::BLEJoystick::Function& function)
+    bool sendConsoleMessages = false;
+    std::function<void(const efhilton::ble::BLEJoystick::Function&)> onFunctionsCallback{
+        [&joystick, &sendConsoleMessages](const efhilton::ble::BLEJoystick::Function& function)
         {
             ESP_LOGI("MAIN", "Function '%c%d' toggled to %d", function.function, function.id, function.state);
             if (function.id == 0)
@@ -137,16 +131,33 @@ extern "C" void app_main(void)
                     << "' has no implementation. Ignoring.";
                 joystick.sendConsoleMessage(ss.str());
             }
-        });
-    joystick.setOnJoysticksCallback([](const efhilton::ble::BLEJoystick::Joystick& j)
-    {
-        ESP_LOGI("MAIN", "Joystick '%c' moved to (%.2f, %.2f)", j.joystick, j.x, j.y);
-        if (j.joystick == 'L')
-        {
-            setDutyCycleToPct(LEDC_CHANNEL_0, static_cast<int>((j.x + 1) * 50));
-            setDutyCycleToPct(LEDC_CHANNEL_1, static_cast<int>((j.y + 1) * 50));
         }
-    });
+    };
+
+    std::function<void(const efhilton::ble::BLEJoystick::Trigger&)> onTriggersCallback{
+        [](const efhilton::ble::BLEJoystick::Trigger& trigger)
+        {
+            ESP_LOGI("MAIN", "Trigger '%c%d' triggered", trigger.trigger, trigger.id);
+        }
+    };
+
+    std::function<void(const efhilton::ble::BLEJoystick::Joystick&)> onJoystickCallback{
+        [](const efhilton::ble::BLEJoystick::Joystick& j)
+        {
+            ESP_LOGI("MAIN", "Joystick '%c' moved to (%.2f, %.2f)", j.joystick, j.x, j.y);
+            if (j.joystick == 'L')
+            {
+                setDutyCycleToPct(LEDC_CHANNEL_0, static_cast<int>((j.x + 1) * 50));
+                setDutyCycleToPct(LEDC_CHANNEL_1, static_cast<int>((j.y + 1) * 50));
+            }
+        }
+    };
+
+    joystick.setOnConnectedCallback([] { ESP_LOGI("MAIN", "BLE JOYSTICK CONNECTED"); });
+    joystick.setOnDisconnectedCallback([] { ESP_LOGI("MAIN", "BLE JOYSTICK DISCONNECTED"); });
+    joystick.setOnTriggersCallback(onTriggersCallback);
+    joystick.setOnFunctionsCallback(onFunctionsCallback);
+    joystick.setOnJoysticksCallback(onJoystickCallback);
 
     ESP_LOGI(TAG, "Waiting for Connections.");
 
