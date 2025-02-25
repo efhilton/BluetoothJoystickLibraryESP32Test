@@ -3,3 +3,4 @@ cmake-build-debug-default-idf/
 sdkconfig
 dependencies.lock
 *~
+/.idea/
