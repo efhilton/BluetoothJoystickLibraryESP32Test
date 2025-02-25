@@ -54,13 +54,13 @@ More features shall be added as I continue to implement more features on my elec
 
 ## Cloning the Project
 This project makes use of git submodules, which means you need to perform additional steps to ensure all submodules are correctly initialized and updated after cloning. Here are the steps to clone this repository:
-1. **Clone the Repository with submodules**
+
+### Clone the Repository with submodules
 To clone the repository properly, along with its submodules, use the `--recurse-submodules` flag:
 ``` bash
-   git clone --recurse-submodules <repository-url>
+   git clone --recurse-submodules git@github.com:efhilton/BluetoothJoystickLibraryESP32Test.git
 ```
-Replace `<repository-url>` with the actual URL of the project.
-1. **If You Already Cloned the Repository Without Submodules**
+### If You Already Cloned the Repository Without Submodules
 If you have already cloned the repository without the `--recurse-submodules` flag, you can still initialize and update the submodules with the commands below:
 ``` bash
    git submodule init
@@ -70,7 +70,7 @@ Alternatively, you can run the following single command to initialize and update
 ``` bash
    git submodule update --init --recursive
 ```
-1. **Keeping Submodules Updated**
+### Keeping Submodules Updated
 If there are updates to the submodules in the repository, you can pull the latest changes for both the main repo and its submodules using:
 ``` bash
    git pull --recurse-submodules
@@ -79,4 +79,4 @@ This ensures that your submodules are always up-to-date with the repository.
 
 ## Questions?
 
-Please contact [Edgar Hilton](mailto://edgar.hilton@gmail.com) if you have any queestions.
+Please contact [Edgar Hilton](mailto://edgar.hilton@gmail.com) if you have any questions.
