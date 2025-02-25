@@ -1,0 +1,1 @@
+This is here as a placeholder only. Without it, `git submodule` seems to fail when cloning. Do not delete.
